@@ -22,13 +22,4 @@ streamlit>=1.41.0,<2.0.0
 # Additional Tools
 typing-extensions>=4.12.2,<5.0.0
 
-# Local Modules (Development Mode)
--e ./mc.py
--e ./ehp.py
--e ./model3.py
--e ./rf7.py
--e ./ltsm2.py
--e ./weighted_growth.py
--e ./hp.py
--e ./s_hp.py
--e ./visualize.py
+-e .
