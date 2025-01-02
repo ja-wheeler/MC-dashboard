@@ -1,0 +1,6 @@
+setup.py
+mc_dashboard.egg-info/PKG-INFO
+mc_dashboard.egg-info/SOURCES.txt
+mc_dashboard.egg-info/dependency_links.txt
+mc_dashboard.egg-info/requires.txt
+mc_dashboard.egg-info/top_level.txt
