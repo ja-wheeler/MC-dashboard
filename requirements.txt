@@ -1,0 +1,34 @@
+# Core Libraries
+pandas>=2.2.3,<3.0.0
+numpy>=1.26.0,<2.0.0
+scipy>=1.11.3,<2.0.0
+
+# Visualization Libraries
+matplotlib>=3.8.0,<4.0.0
+seaborn>=0.12.2,<1.0.0
+plotly>=5.15.0,<6.0.0
+
+# Machine Learning Libraries
+scikit-learn>=1.3.1,<2.0.0
+xgboost>=1.7.6,<2.0.0
+tensorflow>=2.14.0,<3.0.0
+
+# Statistical Modeling
+statsmodels>=0.14.0,<1.0.0
+
+# Streamlit
+streamlit>=1.41.0,<2.0.0
+
+# Additional Tools
+typing-extensions>=4.12.2,<5.0.0
+
+# Local Modules (Development Mode)
+-e ./mc.py
+-e ./ehp.py
+-e ./model3.py
+-e ./rf7.py
+-e ./ltsm2.py
+-e ./weighted_growth.py
+-e ./hp.py
+-e ./s_hp.py
+-e ./visualize.py
