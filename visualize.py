@@ -5,6 +5,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from mc import MonteCarloSimulator, MultiComponentNoise, NoiseParameters, HybridPredictorWrapper
 from weighted_growth import WeightedTrendPredictorWrapper
+from processor import DataProcessor
 
 class StreamlitMonteCarloApp:
     """Enhanced Streamlit app with model selection and parameter controls"""
@@ -26,12 +27,12 @@ class StreamlitMonteCarloApp:
             options=list(self.available_models.keys())
         )
         
-        # Data file input
-        data_file = st.sidebar.file_uploader(
-            "Upload Data File",
-            type=['csv']
-        )
-        
+        uploaded_files = st.sidebar.file_uploader(
+            "Upload 4 CSV files",
+            type=['csv'],
+            accept_multiple_files=True
+            )
+                    
         # Simulation parameters
         st.sidebar.subheader("Simulation Parameters")
         future_periods = st.sidebar.slider(
@@ -93,7 +94,7 @@ class StreamlitMonteCarloApp:
         
         return {
             'selected_model': selected_model,
-            'data_file': data_file,
+            'uploaded_files': uploaded_files,
             'future_periods': future_periods,
             'n_simulations': n_simulations,
             'base_volatility': base_volatility,
@@ -134,14 +135,16 @@ class StreamlitMonteCarloApp:
     
     def run_simulation(self, model_config: Dict) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
         """Run Monte Carlo simulation with selected parameters"""
+        file_mapping = {}
         try:
-            if model_config['data_file'] is None:
-                st.warning("Please upload a data file to proceed.")
-                return None, None
+            uploaded_files = model_config['uploaded_files']
+ 
             
             # Read the uploaded file
-            data = pd.read_csv(model_config['data_file'])
-            print("Data loaded successfully:", data.shape)
+            #print("file mapping",file_mapping)
+            processor = DataProcessor()
+            data = processor.process_funding_data(uploaded_files)
+            #print("Data loaded successfully:", data.shape)
             
             # Initialize the selected model
             ModelClass = self.available_models[model_config['selected_model']]
