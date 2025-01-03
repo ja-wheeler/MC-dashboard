@@ -3,9 +3,9 @@ from scipy.stats import norm
 from typing import Dict, Optional, Tuple
 import matplotlib.pyplot as plt
 import seaborn as sns
-from ehp import EnhancedHybridPredictor
+from HybridPredictor import EnhancedHybridPredictor
 import pandas as pd
-from ltsm2 import DealSizePredictor
+from ltsm import DealSizePredictor
 
 class StochasticHybridPredictor(EnhancedHybridPredictor):
     def __init__(self, 

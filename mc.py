@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from dataclasses import dataclass
-from ehp import EnhancedHybridPredictor
+from HybridPredictor import HybridPredictor
 from weighted_growth import WeightedTrendPredictorWrapper
 
 # Protocol for prediction models
@@ -185,10 +185,10 @@ class MonteCarloVisualizer:
 
 
 
-from ehp import EnhancedHybridPredictor
-from ltsm2 import DealSizePredictor
+from HybridPredictor import HybridPredictor
+from ltsm import DealSizePredictor
 
-class EnhancedHybridPredictorWrapper:
+class HybridPredictorWrapper:
     """Wrapper class for EnhancedHybridPredictor to make it compatible with MC simulation"""
     def __init__(self, data: pd.DataFrame):  # Changed from data_path: str
         # Initialize DealSizePredictor
@@ -196,7 +196,7 @@ class EnhancedHybridPredictorWrapper:
         self.deal_predictor.load('production_model')
         
         # Initialize the actual predictor with DataFrame directly
-        self.model = EnhancedHybridPredictor(
+        self.model = HybridPredictor(
             data=data,  # Pass DataFrame instead of path
             deal_predictor=self.deal_predictor,
             target_col='Total Funding'
@@ -215,7 +215,7 @@ class EnhancedHybridPredictorWrapper:
 if __name__ == "__main__":
     try:
         # Initialize wrapped prediction model
-        model = EnhancedHybridPredictorWrapper('data.csv')
+        model = HybridPredictorWrapper('data.csv')
         model.fit()
         
         # Create noise parameters and generator

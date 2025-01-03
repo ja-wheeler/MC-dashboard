@@ -5,10 +5,10 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 import warnings
-from ltsm2 import DealSizePredictor
+from ltsm import DealSizePredictor
 warnings.filterwarnings('ignore')
 
-class EnhancedHybridPredictor:
+class HybridPredictor:
     def __init__(self, data, deal_predictor, target_col='Total Funding', 
                 column_mapping=None):
         # Accept either DataFrame or path

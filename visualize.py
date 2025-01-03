@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from typing import Dict, Optional, Tuple
 import numpy as np
-from mc import MonteCarloSimulator, MultiComponentNoise, NoiseParameters, EnhancedHybridPredictorWrapper
+from mc import MonteCarloSimulator, MultiComponentNoise, NoiseParameters, HybridPredictorWrapper
 from weighted_growth import WeightedTrendPredictorWrapper
-from model3 import RobustAdaptivePredictorWrapper
 
 class StreamlitMonteCarloApp:
     """Enhanced Streamlit app with model selection and parameter controls"""
@@ -13,9 +12,8 @@ class StreamlitMonteCarloApp:
     def __init__(self):
         st.set_page_config(page_title="Monte Carlo Forecast", layout="wide")
         self.available_models = {
-            'Enhanced Hybrid Predictor': EnhancedHybridPredictorWrapper,
-            'Weighted Trend Predictor': WeightedTrendPredictorWrapper,
-            "model 3": RobustAdaptivePredictorWrapper
+            'Enhanced Hybrid Predictor': HybridPredictorWrapper,
+            'Weighted Trend Predictor': WeightedTrendPredictorWrapper
         }
         
     def create_model_controls(self) -> Dict:
