@@ -9,6 +9,9 @@ from tensorflow.keras.optimizers import Adam
 import logging
 import os
 import json
+# Add these imports at the top
+import matplotlib.pyplot as plt
+import seaborn as sns
 from datetime import datetime
 from pathlib import Path
 import warnings
@@ -193,6 +196,77 @@ class DealSizePredictor:
         except Exception as e:
             self.logger.error(f"Error in model building: {str(e)}")
             raise
+
+
+
+    # Add this method to the DealSizePredictor class
+    def plot_results(self, yearly_deals, forecast_df, save_path=None):
+        """
+        Create visualizations for historical data and predictions.
+        
+        Args:
+            yearly_deals (pd.DataFrame): Historical yearly deals data
+            forecast_df (pd.DataFrame): Forecasted values with confidence intervals
+            save_path (str, optional): Path to save the plots
+        """
+        try:
+            # Set the style
+            plt.style.use('Solarize_Light2')
+            
+            # Create a figure with multiple subplots
+            fig = plt.figure(figsize=(15, 10))
+            gs = fig.add_gridspec(2, 2)
+            
+            # 1. Historical and Predicted Deal Sizes
+            ax1 = fig.add_subplot(gs[0, :])
+            
+            # Plot historical data
+            ax1.plot(yearly_deals['Year'], yearly_deals['Average_Deal_Size'], 
+                    marker='o', label='Historical', color='blue')
+            
+            # Plot predictions with confidence interval
+            ax1.plot(forecast_df['Year'], forecast_df['Predicted_Deal_Size'], 
+                    marker='s', label='Predicted', color='red', linestyle='--')
+            ax1.fill_between(forecast_df['Year'], 
+                            forecast_df['Lower_Bound'],
+                            forecast_df['Upper_Bound'],
+                            alpha=0.2, color='red',
+                            label='95% Confidence Interval')
+            
+            ax1.set_title('Historical and Predicted Deal Sizes Over Time')
+            ax1.set_xlabel('Year')
+            ax1.set_ylabel('Average Deal Size')
+            ax1.legend()
+            ax1.grid(True)
+            
+            # 2. Deal Count Over Time
+            ax2 = fig.add_subplot(gs[1, 0])
+            ax2.bar(yearly_deals['Year'], yearly_deals['Deal_Count'], 
+                    color='skyblue', alpha=0.7)
+            ax2.set_title('Number of Deals per Year')
+            ax2.set_xlabel('Year')
+            ax2.set_ylabel('Deal Count')
+            ax2.grid(True)
+            
+            # 3. Deal Size Distribution
+            ax3 = fig.add_subplot(gs[1, 1])
+            sns.histplot(data=yearly_deals, x='Average_Deal_Size', bins=15, 
+                        kde=True, ax=ax3, color='skyblue')
+            ax3.set_title('Distribution of Average Deal Sizes')
+            ax3.set_xlabel('Average Deal Size')
+            ax3.set_ylabel('Frequency')
+            
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                self.logger.info(f"Plots saved to {save_path}")
+            
+            plt.show()
+            
+        except Exception as e:
+            self.logger.error(f"Error in plotting results: {str(e)}")
+            raise
     
     def train(self, X_train, y_train, sample_weights, validation_split=0.2, 
             epochs=100, batch_size=32):
@@ -205,7 +279,7 @@ class DealSizePredictor:
             
             # Updated checkpoint path to use .keras extension
             checkpoint = ModelCheckpoint(
-                self.model_dir / 'best_model.keras',  # Changed from .h5 to .keras
+                self.model_dir / 'model.keras',  # Changed from .h5 to .keras
                 monitor='val_loss',
                 save_best_only=True
             )
@@ -384,13 +458,21 @@ def main():
         })
         
         # Save model
-        predictor.save('production_model')
+        predictor.save('models')
         
         # Print results
         print("\nHistorical Data:")
         print(yearly_deals)
         print("\nForecast with Confidence Intervals:")
         print(forecast_df)
+
+                 # Add visualization
+        predictor.plot_results(
+            yearly_deals,
+            forecast_df,
+            save_path='deal_size_analysis.png'
+        )
+
         
     except Exception as e:
         logging.error(f"Error in main execution: {str(e)}")

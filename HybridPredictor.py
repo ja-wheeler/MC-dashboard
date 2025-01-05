@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 from ltsm import DealSizePredictor
 warnings.filterwarnings('ignore')
+from old.base_models import FundingForecaster
 
 class HybridPredictor:
     def __init__(self, data, deal_predictor, target_col='Total Funding', 
@@ -121,7 +122,7 @@ class HybridPredictor:
         
         return X
     
-    def fit(self, arima_order=(1,1,1)):
+    def fit(self, arima_order=(1,0,1)):
         print("Fitting models...")
         
         # Fit ARIMA
@@ -139,11 +140,12 @@ class HybridPredictor:
         X_scaled = self.scaler.fit_transform(X)
         
         self.residual_model = XGBRegressor(
-            n_estimators=10,  # Much fewer trees
-            learning_rate=0.3,
-            max_depth=2,      # Shallower trees
-            min_child_weight=2,  # Prevent overfitting
-            subsample=0.8
+            n_estimators=50,  # Much fewer trees
+            learning_rate=0.1,
+            max_depth=3,      # Shallower trees
+            min_child_weight=3,  # Prevent overfitting
+            subsample=0.8, 
+            colsample_bytree=0.8
         )
         self.residual_model.fit(X_scaled, self.residuals)
         
@@ -214,33 +216,3 @@ class HybridPredictor:
             })
             
         return importance_df.sort_values('Importance', ascending=False)
-
-if __name__ == "__main__":
-    # Initialize predictor
-    deal_predictor = DealSizePredictor()
-    deal_predictor.load('production_model')
-    
-    # Initialize and fit enhanced predictor
-    predictor = EnhancedHybridPredictor(
-        'data.csv', 
-        deal_predictor,
-        target_col='Total Funding'
-    )
-    
-    try:
-        predictor.fit()
-        
-        # Generate forecast
-        forecast = predictor.predict(future_years=4)
-        print("\nForecast Results:")
-        print(forecast)
-        
-        # Get feature importance
-        importance = predictor.get_feature_importance()
-        print("\nFeature Importance:")
-        print(importance)
-        
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        print("\nAvailable columns in dataset:")
-        print(predictor.df.columns.tolist())

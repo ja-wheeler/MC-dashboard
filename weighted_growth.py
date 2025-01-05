@@ -68,11 +68,11 @@ class WeightedTrendPredictor:
         growth_factor = np.array([(1 + self.recent_growth_rate) ** i 
                                 for i in range(1, future_periods + 1)])
         
-        # Combine predictions (80% trend, 20% growth for more stability)
+        # Combine predictions (60% trend, 40% growth)
         base_value = self.df[self.target_col].iloc[-1]
         growth_pred = base_value * growth_factor
         
-        final_pred = 0.8 * trend_pred + 0.2 * growth_pred
+        final_pred = 0.6 * trend_pred + 0.4 * growth_pred
         
         # Create forecast DataFrame
         forecast_df = pd.DataFrame({
@@ -83,6 +83,7 @@ class WeightedTrendPredictor:
         })
         
         return forecast_df
+
 class WeightedTrendPredictorWrapper:
     """Wrapper for WeightedTrendPredictor to make it compatible with MC simulation"""
     

@@ -6,7 +6,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
-from base_models import FundingForecaster
+from old.base_models import FundingForecaster
 
 class HybridPredictor:
     def __init__(self, data_path, target_col='Total Funding'):

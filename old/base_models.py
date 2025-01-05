@@ -207,7 +207,7 @@ class FundingForecaster:
 # Usage example
 if __name__ == "__main__":
     # Initialize forecaster
-    forecaster = FundingForecaster('data.csv')
+    forecaster = FundingForecaster('total.csv')
     
     # Fit models and generate forecasts
     forecaster.fit_and_forecast(future_years=5)
