@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from typing import Dict, Optional, Tuple
 import numpy as np
-from mc import MonteCarloSimulator, MultiComponentNoise, NoiseParameters
+from mc import MonteCarloSimulator, AdaptiveNoiseGenerator, MarketNoiseParameters, calibrate_parameters
 from processor import DataProcessor
 from wrappers import EnhancedPredictorWrapper, NnHybridPredictorWrapper
 
@@ -21,7 +21,7 @@ class StreamlitMonteCarloApp:
         """Create controls for model selection and parameters"""
         st.sidebar.header("Model Configuration")
         
-        # Model selection
+        # Keep model selection and file upload
         selected_model = st.sidebar.selectbox(
             "Select Model",
             options=list(self.available_models.keys())
@@ -31,17 +31,16 @@ class StreamlitMonteCarloApp:
             "Upload 4 CSV files",
             type=['csv'],
             accept_multiple_files=True
-            )
-                    
-        # Simulation parameters
-        st.sidebar.subheader("Simulation Parameters")
+        )
+        
+        st.sidebar.subheader("Simulation Settings")
         future_periods = st.sidebar.slider(
-            "Future Periods",
+            "Future Periods (Years)",
             min_value=1,
             max_value=10,
             value=3
         )
-        
+
         n_simulations = st.sidebar.slider(
             "Number of Simulations",
             min_value=100,
@@ -49,43 +48,49 @@ class StreamlitMonteCarloApp:
             value=1000,
             step=100
         )
+
+        st.sidebar.subheader("Market Parameters")
         
-        # Noise parameters
-        st.sidebar.subheader("Noise Parameters")
-        base_volatility = st.sidebar.slider(
-            "Base Volatility",
+        # Simplified market parameters for GBM
+        volatility = st.sidebar.slider(
+            "Market Volatility (σ)",
             min_value=0.01,
-            max_value=0.5,
+            max_value=1.0,
             value=0.15,
-            step=0.01
+            help="Annual volatility of returns"
         )
         
-        trend_volatility = st.sidebar.slider(
-            "Trend Volatility",
-            min_value=0.01,
-            max_value=0.3,
-            value=0.08,
-            step=0.01
-        )
-        
-        seasonality_volatility = st.sidebar.slider(
-            "Seasonality Volatility",
-            min_value=0.01,
-            max_value=0.2,
+        drift = st.sidebar.slider(
+            "Market Drift (μ)",
+            min_value=-0.5,
+            max_value=0.5,
             value=0.05,
-            step=0.01
-        )
-            # Add growth factor control
-        growth_factor = st.sidebar.slider(
-            "Annual Growth Factor",
-            min_value=-0.10,
-            max_value=0.30,
-            value=0.02,
-            step=0.01,
-            help="Expected annual growth rate (e.g., 0.02 = 2% growth)"
+            help="Expected annual return"
         )
         
-        # Random seed
+        jump_prob = st.sidebar.slider(
+            "Jump Probability",
+            min_value=0.0,
+            max_value=0.1,
+            value=0.01,
+            help="Probability of extreme events"
+        )
+        
+        jump_size = st.sidebar.slider(
+            "Jump Size",
+            min_value=0.0,
+            max_value=0.5,
+            value=0.1,
+            help="Average magnitude of jumps"
+        )
+        
+        # Auto-calibration option
+        auto_calibrate = st.sidebar.checkbox(
+            "Auto-calibrate from data",
+            value=True,
+            help="Learn parameters from historical data"
+        )
+        
         seed = st.sidebar.number_input(
             "Random Seed",
             value=42,
@@ -94,13 +99,14 @@ class StreamlitMonteCarloApp:
         
         return {
             'selected_model': selected_model,
-            'uploaded_files': uploaded_files,
             'future_periods': future_periods,
             'n_simulations': n_simulations,
-            'base_volatility': base_volatility,
-            'trend_volatility': trend_volatility,
-            'seasonality_volatility': seasonality_volatility,
-            'growth_factor': growth_factor,
+            'uploaded_files': uploaded_files,
+            'volatility': volatility,
+            'drift': drift,
+            'jump_prob': jump_prob,
+            'jump_size': jump_size,
+            'auto_calibrate': auto_calibrate,
             'seed': seed
         }
     
@@ -135,59 +141,36 @@ class StreamlitMonteCarloApp:
     
     def run_simulation(self, model_config: Dict) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
         """Run Monte Carlo simulation with selected parameters"""
-        file_mapping = {}
         try:
             uploaded_files = model_config['uploaded_files']
- 
             
-            # Read the uploaded file
-            #print("file mapping",file_mapping)
+            # Keep data processing
             processor = DataProcessor()
             data = processor.process_funding_data(uploaded_files)
-            #print("Data loaded successfully:", data.shape)
             
             # Initialize the selected model
             ModelClass = self.available_models[model_config['selected_model']]
-            print(f"ModelClass type: {type(ModelClass)}")  # Debug model class type
-            
             model = ModelClass(data)
-            print(f"Model instance type: {type(model)}")  # Debug model instance type
-            print(f"Model attributes: {dir(model)}")      # Debug available methods/attributes
-            
-            print("About to fit model...")
             model.fit()
-            print("Model fitted successfully")
             
-            # Debug model state after fitting
-            print(f"Model after fit - has df?: {'df' in dir(model)}")
-            if hasattr(model, 'df'):
-                print(f"Model df type: {type(model.df)}")
+            # Create Monte Carlo parameters
+            if model_config['auto_calibrate']:
+                historical_returns = data['Total Funding']
+                print(historical_returns)
+                mc_params = calibrate_parameters(historical_returns)
+            else:
+                mc_params = MarketNoiseParameters(
+                    volatility=model_config['volatility'],
+                    trend=model_config['drift'],
+                    momentum=model_config['jump_prob'],
+                    market_impact=model_config['jump_size'],
+                )
+
+            # Create simulator with GBM
+            print('PARAMS', mc_params)
+            noise_generator = AdaptiveNoiseGenerator(mc_params)
+            simulator = MonteCarloSimulator(model, noise_generator=noise_generator, seed=model_config['seed'])
             
-            # Create noise parameters with debug
-            print("Creating noise parameters...")
-            noise_params = NoiseParameters(
-                base_volatility=model_config['base_volatility'],
-                trend_volatility=model_config['trend_volatility'],
-                seasonality_volatility=model_config['seasonality_volatility'],
-                growth_factor=model_config['growth_factor']  # Add growth factor
-            )
-            print(f"Noise params type: {type(noise_params)}")
-            
-            print("Creating noise generator...")
-            noise_generator = MultiComponentNoise(noise_params)
-            print(f"Noise generator type: {type(noise_generator)}")
-            
-            # Debug simulator creation
-            print("About to create simulator...")
-            simulator = MonteCarloSimulator(
-                model=model,
-                noise_generator=noise_generator,
-                seed=model_config['seed']
-            )
-            print(f"Simulator type: {type(simulator)}")
-            print(f"Simulator attributes: {dir(simulator)}")
-            
-            # Debug simulation run
             print(f"About to run simulation with periods={model_config['future_periods']}, n_sims={model_config['n_simulations']}")
             try:
                 forecast = simulator.run_simulation(
@@ -205,9 +188,6 @@ class StreamlitMonteCarloApp:
         except Exception as e:
             print(f"Error details: {str(e)}")
             print(f"Error type: {type(e)}")
-            # Get full traceback
-            import traceback
-            print(f"Full traceback:\n{traceback.format_exc()}")
             st.error(f"Error during simulation: {str(e)}")
             return None, None
         
@@ -392,9 +372,12 @@ class StreamlitMonteCarloVisualizer:
         # Create histogram of simulation results
         fig = go.Figure()
         
+        # Fix to access the correct column
+        plot_data = forecast_df['MC_mean'] if period >= len(forecast_df) else forecast_df.iloc[period]
+        
         fig.add_trace(
             go.Histogram(
-                x=forecast_df.iloc[period],
+                x=plot_data,
                 nbinsx=50,
                 name="Distribution"
             )
@@ -409,7 +392,6 @@ class StreamlitMonteCarloVisualizer:
         )
         
         st.plotly_chart(fig, use_container_width=True)
-
 if __name__ == "__main__":
     app = StreamlitMonteCarloApp()
     app.run_app()

@@ -2,10 +2,119 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional, Tuple, Any, Protocol
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from dataclasses import dataclass
 
+from dataclasses import dataclass
+import numpy as np
+
+@dataclass
+class MarketNoiseParameters:
+    """Core parameters for funding market dynamics."""
+    volatility: float      # Annualized volatility (sigma)
+    trend: float           # Drift/expected return (mu)
+    momentum: float        # Jump probability (lambda)
+    market_impact: float   # Jump size magnitude (scale for jumps)
+
+class AdaptiveNoiseGenerator:
+    def __init__(self, params: MarketNoiseParameters):
+        self.params = params
+        self._validate_parameters()
+        
+    def _validate_parameters(self):
+        if not (0 <= self.params.volatility <= 1):
+            raise ValueError("Volatility must be in [0, 1]")
+        if not (-0.5 <= self.params.trend <= 0.5):
+            raise ValueError("Drift must be in [-0.5, 0.5]")
+        if not (0 <= self.params.momentum <= 1):
+            raise ValueError("Jump probability must be in [0, 1]")
+        if not (0 <= self.params.market_impact <= 1):
+            raise ValueError("Jump size must be in [0, 1]")
+    
+    def generate_noise(
+        self,
+        n_periods: int,
+        random_state: np.random.RandomState,
+    ) -> np.ndarray:
+        """
+        Generate paths using GBM with jumps and clear impact of trend.
+        
+        Parameters:
+        - n_periods: Number of time steps (years).
+        - random_state: Numpy random state for reproducibility.
+        
+        Returns:
+        - Returns array of size n_periods.
+        """
+        # Generate normal random variables for stochastic term
+        Z = random_state.normal(0, 1, n_periods)
+
+        # Poisson process for jumps 
+        n_jumps = random_state.poisson(self.params.momentum * n_periods)
+        jump_times = random_state.choice(n_periods, size=n_jumps)
+
+        # Lognormal jump sizes
+        jump_sizes = random_state.lognormal(
+        mean=-0.5 * self.params.market_impact**2,  # Ensures E[jump] = 1
+        sigma=self.params.market_impact,
+        size=n_jumps
+        )
+
+        # Initialize returns with diffusion
+        returns = self.params.trend + self.params.volatility * Z
+
+        # Add jumps at random times
+        for i, t in enumerate(jump_times):
+            returns[t] += jump_sizes[i] - 1  # Subtract 1 to center jumps around 0
+
+        return returns
+    
+    
+def calibrate_parameters(historical_prices: np.ndarray) -> MarketNoiseParameters:
+    prices = np.array(historical_prices, dtype=np.float64)
+    log_prices = np.log(prices)
+    log_returns = np.diff(log_prices)
+    valid_returns = log_returns[np.isfinite(log_returns)]
+    
+    if len(valid_returns) == 0 or np.all(np.isnan(valid_returns)):
+        return MarketNoiseParameters(
+            volatility=0.05, trend=0.02, momentum=0.03, market_impact=0.1
+        )
+    
+    # Estimate diffusion volatility (excluding jumps)
+    volatility = np.std(valid_returns[
+    (np.abs(valid_returns) >= np.percentile(np.abs(valid_returns), 25)) & 
+    (np.abs(valid_returns) <= np.percentile(np.abs(valid_returns), 75))
+])
+    
+    # Trend estimation (same as before)
+    time_points = np.arange(len(log_prices))
+    slopes = [(log_prices[j] - log_prices[i]) / (time_points[j] - time_points[i])
+             for i in range(len(time_points)) 
+             for j in range(i + 1, len(time_points))]
+    trend = np.median(slopes)
+    
+    # Jump frequency (lambda)
+    extreme_returns = np.abs(valid_returns) > 1.2 * volatility
+    print("extreme", extreme_returns)
+    momentum = np.mean(extreme_returns)
+    
+    # Jump size volatility
+    jump_returns = valid_returns[extreme_returns]
+    market_impact = np.std(jump_returns) if len(jump_returns) > 0 else 0.1
+    
+
+    # Cap all parameters between 0 and 1
+    volatility = min(volatility, 0.3)
+    trend = min(max(np.median(slopes), -0.2), 0.2)  # Cap trend at ±20%
+    momentum = min(np.mean(extreme_returns), 0.3)    # Cap at 0.3 jumps per year
+    market_impact = min(np.std(jump_returns) if len(jump_returns) > 0 else 0.1, 0.5)  # Cap impact at 50%
+
+    return MarketNoiseParameters(
+        volatility=volatility,
+        trend=trend,
+        momentum=momentum,
+        market_impact=market_impact
+    )
 
 # Protocol for prediction models
 class PredictionModel(Protocol):
@@ -17,55 +126,13 @@ class PredictionModel(Protocol):
         """Protocol method for fitting"""
         pass
 
-@dataclass
-class NoiseParameters:
-    """Dataclass for noise parameters"""
-    base_volatility: float = 0.1
-    trend_volatility: float = 0.05
-    seasonality_volatility: float = 0.03
-    growth_factor: float = 0.02
-
 class NoiseGenerator(ABC):
     """Abstract base class for noise generation strategies"""
     @abstractmethod
     def generate_noise(self, n_periods: int, random_state: np.random.RandomState) -> np.ndarray:
         pass
 
-class MultiComponentNoise(NoiseGenerator):
-    """Implements multi-component noise generation with growth factor"""
-    def __init__(self, noise_params: NoiseParameters):
-        self.noise_params = noise_params
 
-    def generate_noise(self, n_periods: int, random_state: np.random.RandomState) -> np.ndarray:
-        # Base noise component
-        base_noise = random_state.normal(
-            0, 
-            self.noise_params.base_volatility, 
-            n_periods
-        )
-        
-        # Trend noise with growth factor
-        trend_factor = np.linspace(0, 1, n_periods)
-        trend_noise = random_state.normal(
-            0, 
-            self.noise_params.trend_volatility, 
-            n_periods
-        ) * trend_factor
-        
-        # Seasonal noise component
-        seasonal_cycle = np.sin(2 * np.pi * np.arange(n_periods) / 12)
-        seasonal_noise = random_state.normal(
-            0, 
-            self.noise_params.seasonality_volatility, 
-            n_periods
-        ) * seasonal_cycle
-        
-        # Calculate cumulative growth factor
-        cumulative_growth = np.array([(1 + self.noise_params.growth_factor) ** i for i in range(n_periods)])
-        
-        # Combine all components with growth
-        total_noise = base_noise + trend_noise + seasonal_noise
-        return (total_noise + 1) * cumulative_growth - 1
 
 class MonteCarloSimulator:
     """Monte Carlo simulation class that works with any prediction model"""

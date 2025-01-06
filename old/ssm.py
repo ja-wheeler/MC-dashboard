@@ -1,22 +1,16 @@
+
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.statespace.structural import UnobservedComponents
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
 import warnings
-from processor import DataProcessor  # Keep the original data processor
+from processor import DataProcessor
 warnings.filterwarnings('ignore')
 
 class EnhancedFundingPredictor:
     def __init__(self, data, target_col='Total Funding'):
-        """
-        Initialize the enhanced predictor while maintaining original data processing
-        
-        Parameters:
-        data: DataFrame or string (path to CSV)
-        target_col: string, column name for the target variable
-        """
         if isinstance(data, str):
             self.df = pd.read_csv(data)
         else:
@@ -31,11 +25,8 @@ class EnhancedFundingPredictor:
         
         self.target_col = target_col
         self.scaler = RobustScaler(quantile_range=(10, 90))
-        
-        # Define funding types as in original
         self.funding_types = ['Seed Stage Funding', 'Early Stage Funding', 
                             'Late Stage Funding']
-    
 
     def add_engineered_features(self, df):
         """Modified feature engineering for startup funding data"""
@@ -60,46 +51,47 @@ class EnhancedFundingPredictor:
                 features[f'{stage} Rounds']
             ).fillna(0)
         
- 
         return features
     
     def prepare_features(self, df=None):
-        """Prepare features maintaining original structure"""
         if df is None:
             df = self.df
             
         features = self.add_engineered_features(df)
         
-        # Select numerical columns only
         numerical_cols = features.select_dtypes(
             include=['int64', 'float64']
         ).columns
         numerical_cols = [col for col in numerical_cols 
                          if col != self.target_col and col != 'Year']
         
-        # Store feature names for consistency
         if not hasattr(self, 'feature_names'):
             self.feature_names = numerical_cols
         
         return features[self.feature_names]
     
     def fit(self):
-        """Fit enhanced hybrid model"""
+        """Fit enhanced hybrid model with state space component"""
         print("Fitting enhanced hybrid model...")
         
-        # Improved ETS model with robust settings
-        self.ets_model = ExponentialSmoothing(
-            self.df[self.target_col],
-            seasonal_periods=2,  # Reduced seasonality for small dataset
-            trend='additive',    # More stable for volatile data
-            seasonal='additive', 
-            initialization_method='estimated'
-        )
-        self.ets_results = self.ets_model.fit()
+        # Log transform the target for better state space modeling
+        y = np.log(self.df[self.target_col])
         
-        # Get ETS predictions and residuals
-        self.ets_predictions = self.ets_results.fittedvalues
-        self.residuals = self.df[self.target_col] - self.ets_predictions
+        # State Space Model with trend and stochastic volatility
+        self.ss_model = UnobservedComponents(
+            y,
+            level='local linear trend',  # Allows for time-varying trend
+            trend=True,
+            cycle=False,  # No cyclical component for yearly data
+            irregular=True,  # Captures random variations
+            stochastic_volatility=True  # Allows for varying uncertainty
+        )
+        
+        self.ss_results = self.ss_model.fit(method='powell', disp=False)
+        
+        # Get state space predictions and residuals
+        self.ss_predictions = np.exp(self.ss_results.fittedvalues)
+        self.residuals = self.df[self.target_col] - self.ss_predictions
         
         # Prepare features for Random Forest
         X = self.prepare_features()
@@ -109,8 +101,8 @@ class EnhancedFundingPredictor:
         
         # Enhanced Random Forest with robust settings
         self.residual_model = RandomForestRegressor(
-            n_estimators=50,     # Reduced to prevent overfitting
-            max_depth=3,         # Simplified tree structure
+            n_estimators=50,
+            max_depth=3,
             min_samples_split=3,
             min_samples_leaf=2,
             bootstrap=True,
@@ -119,13 +111,19 @@ class EnhancedFundingPredictor:
         self.residual_model.fit(X_scaled, self.residuals)
         
         return self
-
+    
     def predict(self, future_years=2):
-        """Generate predictions with direct uncertainty estimation"""
+        """Generate predictions with enhanced uncertainty estimation"""
         print(f"\nGenerating {future_years} year forecast...")
         
-        # Get ETS forecast
-        ets_forecast = self.ets_results.forecast(future_years)
+        # Get state space forecast in log space
+        ss_forecast = self.ss_results.forecast(future_years)
+        
+        # Use rolling standard deviation for better uncertainty estimation
+        rolling_std = pd.Series(self.ss_results.resid).rolling(window=3, min_periods=1).std()
+        model_std = np.clip(rolling_std.mean(), 0.1, 0.25)  # Constrain between 10-25%
+        
+        ss_forecast = np.exp(ss_forecast)  # Transform back to original scale
         
         # Prepare future features
         future_df = pd.DataFrame({
@@ -140,57 +138,62 @@ class EnhancedFundingPredictor:
             if col != 'Year':
                 future_df[col] = self.df[col].iloc[-1]
         
-        # Prepare features for residual prediction
         future_X = self.prepare_features(future_df)
         future_X_scaled = self.scaler.transform(future_X)
         
-        # Direct residual predictions
-        residual_predictions = self.residual_model.predict(future_X_scaled)
-        final_forecast = ets_forecast + residual_predictions
+        # Enhanced bootstrap predictions with progressive uncertainty
+        n_bootstraps = 500  # Increased for better stability
+        all_predictions = []
         
-        # Create output dataframe
+        last_value = self.df[self.target_col].iloc[-1]
+        trend = np.mean(np.diff(np.log(self.df[self.target_col].values[-3:])))  # Recent trend
+        
+        for _ in range(n_bootstraps):
+            # Progressive uncertainty for each year
+            yearly_std = np.array([model_std * (i + 1) for i in range(future_years)])
+            
+            # Bootstrap state space component with trend-aware noise
+            noise = np.random.normal(trend, yearly_std)
+            cumulative_noise = np.cumsum(noise)
+            ss_bootstrap = ss_forecast * np.exp(cumulative_noise)
+            
+            # Ensure reasonable bounds based on historical volatility
+            ss_bootstrap = np.clip(
+                ss_bootstrap,
+                last_value * 0.7 ** np.arange(1, future_years + 1),  # Maximum annual decline
+                last_value * 1.5 ** np.arange(1, future_years + 1)   # Maximum annual growth
+            )
+            
+            # Bootstrap residual predictions
+            residual_bootstrap = self.residual_model.predict(future_X_scaled)
+            
+            # Combine predictions with scaled residuals
+            combined_prediction = ss_bootstrap + residual_bootstrap * np.exp(-0.5 * np.arange(future_years))
+            all_predictions.append(combined_prediction)
+        
+        predictions_array = np.array(all_predictions)
+        final_forecast = np.median(predictions_array, axis=0)
+        lower_bound = np.percentile(predictions_array, 10, axis=0)  # More conservative bounds
+        upper_bound = np.percentile(predictions_array, 90, axis=0)
+        
         forecast_df = pd.DataFrame({
             'Year': range(
                 int(self.df['Year'].max() + 1),
                 int(self.df['Year'].max() + future_years + 1)
             ),
             'Forecast': final_forecast,
-            'ETS_Component': ets_forecast,
-            'Residual_Component': residual_predictions
+            'Lower_Bound': lower_bound,
+            'Upper_Bound': upper_bound,
+            'SS_Component': ss_forecast,
+            'Residual_Component': final_forecast - ss_forecast
         })
         
         return forecast_df
 
-    def get_feature_importance(self):
-        """Get robust feature importance scores"""
-        importance_scores = []
-        
-        # Calculate feature importance across multiple random seeds
-        for seed in range(10):
-            rf = RandomForestRegressor(
-                n_estimators=50,
-                random_state=seed
-            )
-            rf.fit(
-                self.scaler.transform(self.prepare_features()),
-                self.residuals
-            )
-            importance_scores.append(rf.feature_importances_)
-        
-        # Average importance scores
-        mean_importance = np.mean(importance_scores, axis=0)
-        std_importance = np.std(importance_scores, axis=0)
-        
-        return pd.DataFrame({
-            'Feature': self.feature_names,
-            'Importance': mean_importance,
-            'Std': std_importance
-        }).sort_values('Importance', ascending=False)
-    
     def get_model_diagnostics(self):
         """Calculate comprehensive model diagnostics"""
         # In-sample predictions
-        y_pred = self.ets_predictions + self.residual_model.predict(
+        y_pred = self.ss_predictions + self.residual_model.predict(
             self.scaler.transform(self.prepare_features())
         )
         
@@ -232,7 +235,7 @@ if __name__ == "__main__":
     predictor.fit()
 
     # Make predictions
-    forecast = predictor.predict(future_years=9)
+    forecast = predictor.predict(future_years=2)
     print("\nForecast:")
     print(forecast)
 
@@ -241,7 +244,4 @@ if __name__ == "__main__":
     print("\nModel Diagnostics:")
     print(diagnostics)
 
-    # Get feature importance
-    importance = predictor.get_feature_importance()
-    print("\nFeature Importance:")
-    print(importance)
+ 

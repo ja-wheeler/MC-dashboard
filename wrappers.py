@@ -89,7 +89,7 @@ class EnhancedPredictorWrapper:
         return self.model.get_feature_importance()
     
 
-from HybridPredictor import HybridPredictor
+from old.HybridPredictor import HybridPredictor
 from ltsm import DealSizePredictor
 
 class HybridPredictorWrapper:

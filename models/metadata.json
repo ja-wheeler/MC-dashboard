@@ -1,1 +1,1 @@
-{"creation_date": "2025-01-05T17:52:37.555856", "last_training_date": "2025-01-05T17:52:39.243134", "input_features": null, "performance_metrics": null, "data_stats": {"n_records": 10002, "year_range": [2000, 2024], "avg_deals_per_year": 177.72, "total_deal_count": 4443}}
+{"creation_date": "2025-01-06T16:02:50.370488", "last_training_date": "2025-01-06T16:02:55.385368", "input_features": null, "performance_metrics": null, "data_stats": {"n_records": 10002, "year_range": [2000, 2024], "avg_deals_per_year": 177.72, "total_deal_count": 4443}}

@@ -1,4 +1,4 @@
-from opt import EnhancedFundingPredictor
+from old.ssm import EnhancedFundingPredictor
 from ltsm import DealSizePredictor
 import pandas as pd
 import logging 
@@ -106,7 +106,3 @@ if __name__=="__main__":
     print("\nModel Diagnostics:")
     print(diagnostics)
 
-    # Get feature importance
-    importance = predictor.get_feature_importance()
-    print("\nFeature Importance:")
-    print(importance)

@@ -269,7 +269,7 @@ class DealSizePredictor:
             raise
     
     def train(self, X_train, y_train, sample_weights, validation_split=0.2, 
-            epochs=100, batch_size=32):
+            epochs=200, batch_size=32):
         """
         Train the model with cross-validation and early stopping.
         """
@@ -286,7 +286,7 @@ class DealSizePredictor:
             
             early_stopping = EarlyStopping(
                 monitor='val_loss',
-                patience=15,
+                patience=100,
                 restore_best_weights=True
             )
             
