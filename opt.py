@@ -209,6 +209,7 @@ class EnhancedFundingPredictor:
         )
         
         return {
+            "predicted_values": y_pred,
             'MAPE': mape,
             'RMSE': rmse,
             'R2': self.residual_model.score(

@@ -183,13 +183,13 @@ class StreamlitMonteCarloApp:
                 print(f"Simulation error type: {type(sim_error)}")
                 raise  # Re-raise to be caught by outer try/except
                 
-            return model.df, forecast
+            return model.df, forecast, model
                 
         except Exception as e:
             print(f"Error details: {str(e)}")
             print(f"Error type: {type(e)}")
             st.error(f"Error during simulation: {str(e)}")
-            return None, None
+            return None, None, None
         
     def run_app(self):
         """Main application loop"""
@@ -202,7 +202,7 @@ class StreamlitMonteCarloApp:
         # Add a "Run Simulation" button
         if st.sidebar.button("Run Simulation"):
             with st.spinner("Running simulation..."):
-                historical_data, forecast = self.run_simulation(model_config)
+                historical_data, forecast, model = self.run_simulation(model_config)
                 
                 if historical_data is not None and forecast is not None:
                     # Create visualization
@@ -212,6 +212,7 @@ class StreamlitMonteCarloApp:
                     visualizer.plot_forecast(
                         historical_data=historical_data,
                         forecast_df=forecast,
+                        model = model,
                         date_column='Year',
                         target_column='Total Funding',
                         controls=viz_controls
@@ -238,6 +239,7 @@ class StreamlitMonteCarloVisualizer:
         self,
         historical_data: pd.DataFrame,
         forecast_df: pd.DataFrame,
+        model,  # Make sure this parameter is added
         date_column: str,
         target_column: str,
         controls: Dict
@@ -249,7 +251,6 @@ class StreamlitMonteCarloVisualizer:
         # Create the base plot using plotly
         fig = go.Figure()
         
-        # Add historical data
         fig.add_trace(
             go.Scatter(
                 x=historical_data[date_column],
@@ -258,17 +259,34 @@ class StreamlitMonteCarloVisualizer:
                 line=dict(color="blue", width=controls['line_width'])
             )
         )
-        
-        # Add forecast mean
+
+        # Get historical predictions
+        historical_predictions = model.model.get_model_diagnostics()['predicted_values']
+
+        # Add full prediction line (orange)
         fig.add_trace(
             go.Scatter(
-                x=forecast_df[date_column],
-                y=forecast_df['MC_mean'],
-                name="Forecast Mean",
-                line=dict(color="red", width=controls['line_width'], dash='dash')
+                x=pd.concat([historical_data[date_column], forecast_df[date_column]]),
+                y=pd.concat([historical_predictions, forecast_df['MC_mean']]),
+                name="Model Predictions",
+                line=dict(color="orange", width=controls['line_width'])
             )
         )
+
+        # Add running cumulative average 
+        historical_cumulative_avg = historical_data[target_column].expanding().mean()
         
+        full_cumulative_avg = pd.concat([historical_cumulative_avg])
+
+        fig.add_trace(
+        go.Scatter(
+            x=pd.concat([historical_data[date_column], forecast_df[date_column]]),
+            y=full_cumulative_avg,
+            name="Running Historical Average",
+            line=dict(color="gray", width=controls['line_width'], dash='dot')
+        )
+        )
+                                
         # Add 95% confidence interval
         if controls['show_95_ci']:
             fig.add_trace(
